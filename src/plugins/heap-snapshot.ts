@@ -12,7 +12,7 @@ const __dirname = path.dirname(__filename);
 
 // ===== TYPES =====
 interface CleanupQuery {
-  days?: string;
+  seconds: number;
 }
 
 interface RouteParams {
@@ -36,15 +36,8 @@ const generateSnapshotFileName = (): string => {
   return `heap-snapshot-${isoTimestamp}.heapsnapshot`;
 };
 
-const validateDaysParameter = (days?: string): number | null => {
-  if (!days || isNaN(Number(days))) {
-    return null;
-  }
-  return Number(days);
-};
-
-const calculateCutoffDate = (days: number): Date => {
-  return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+const calculateCutoffDate = (seconds: number): Date => {
+  return new Date(Date.now() - seconds * 1000);
 };
 
 // ===== SNAPSHOT SERVICE =====
@@ -84,8 +77,8 @@ class SnapshotService {
     return createReadStream(filePath);
   }
 
-  async cleanupOldSnapshots(days: number): Promise<CleanupResponse> {
-    const cutoffDate = calculateCutoffDate(days);
+  async cleanupOldSnapshots(seconds: number): Promise<CleanupResponse> {
+    const cutoffDate = calculateCutoffDate(seconds);
     const files = await readdir(this.snapshotsDir);
     const heapSnapshotFiles = files.filter((file) =>
       file.endsWith(".heapsnapshot")
@@ -113,7 +106,7 @@ class SnapshotService {
     }
 
     return {
-      message: `Cleanup completed. Deleted ${deletedCount} heap snapshot(s) older than ${days} days.`,
+      message: `Cleanup completed. Deleted ${deletedCount} heap snapshot(s) older than ${seconds} seconds.`,
       deletedFiles,
       deletedCount,
       errors: errors.length > 0 ? errors : undefined,
@@ -121,16 +114,11 @@ class SnapshotService {
   }
 }
 
-// ===== ROUTE HANDLERS =====
-
 // ===== MAIN PLUGIN =====
-const heapSnapshot: FastifyPluginAsync = async (
-  fastify,
-  opts
-): Promise<void> => {
+const heapSnapshot: FastifyPluginAsync = async (fastify): Promise<void> => {
   const snapshotService = new SnapshotService();
 
-  fastify.get("/heap-snapshot", async (request: any, reply: any) => {
+  fastify.get("/heap-snapshot", async (request, reply) => {
     try {
       const fileName = await snapshotService.createSnapshot();
       reply.send({ message: `Heap snapshot written to ${fileName}` });
@@ -140,7 +128,7 @@ const heapSnapshot: FastifyPluginAsync = async (
     }
   });
 
-  fastify.get("/heap-snapshot/list", async (request: any, reply: any) => {
+  fastify.get("/heap-snapshot/list", async (request, reply) => {
     try {
       const files = await snapshotService.listSnapshots();
       reply.send(files);
@@ -152,7 +140,7 @@ const heapSnapshot: FastifyPluginAsync = async (
 
   fastify.get(
     "/heap-snapshot/download/:fileName",
-    async (request: any, reply: any) => {
+    async (request, reply) => {
       const { fileName } = request.params as RouteParams;
 
       try {
@@ -165,23 +153,25 @@ const heapSnapshot: FastifyPluginAsync = async (
     }
   );
 
-  fastify.delete("/heap-snapshot/cleanup", async (request: any, reply: any) => {
-    const { days } = request.query as CleanupQuery;
-    const validDays = validateDaysParameter(days);
-
-    if (validDays === null) {
-      return reply.status(400).send({
-        error:
-          "Please provide a valid number of days as a query parameter (e.g., ?days=7)",
-      });
+  fastify.delete("/heap-snapshot/cleanup", {
+    schema: {
+      querystring: {
+        type: "object",
+        required: ["seconds"],
+        properties: {
+          seconds: { type: "integer", minimum: 1 }
+        }
+      }
     }
+  }, async (request, reply) => {
+    const { seconds } = request.query as CleanupQuery;
 
     try {
-      const result = await snapshotService.cleanupOldSnapshots(validDays);
+      const result = await snapshotService.cleanupOldSnapshots(seconds);
       reply.send(result);
     } catch (error) {
       request.log.error(error, "Failed to cleanup snapshots");
-      reply.status(500).send({ error: "Failed to read snapshots directory" });
+      reply.status(500).send({ error: "Failed to cleanup snapshots" });
     }
   });
 };
