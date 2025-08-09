@@ -7,7 +7,7 @@ curl -X POST http://localhost:3000/heap-snapshot -H "x-admin-key: my-admin-key"
 
 
 ## List Heap Snapshots
-```
+```sh
 curl -X GET http://localhost:3000/heap-snapshot/list -H "x-admin-key: my-admin-key"
 ```
 
