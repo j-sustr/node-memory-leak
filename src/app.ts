@@ -34,6 +34,7 @@ const app: FastifyPluginAsync<AppOptions> = async (
 
   fastify.register(heapSnapshot, {
     adminApiKey: "my-admin-key",
+    autoMonitorEnabled: true,
     memoryThresholdMB: 100, // Set a low threshold for easy testing
     monitorIntervalSeconds: 5, // Check frequently
   });
