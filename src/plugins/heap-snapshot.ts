@@ -94,13 +94,13 @@ class SnapshotService {
       const fileName = generateSnapshotFileName();
       const filePath = path.join(this.snapshotsDir, fileName);
 
-      // pipe + await for completion and propagate errors
-      const fileStream: WriteStream = createWriteStream(filePath, {
-        flags: "wx",
+      await new Promise<void>((resolve, reject) => {
+        const fileStream = createWriteStream(filePath, { flags: "wx" });
+        snapshotStream.pipe(fileStream);
+        fileStream.on("finish", () => resolve());
+        fileStream.on("error", reject);
+        snapshotStream.on("error", reject);
       });
-
-      // Use pipeline to properly handle errors
-      await pipeline(snapshotStream as any, fileStream as any);
 
       return fileName;
     } finally {
