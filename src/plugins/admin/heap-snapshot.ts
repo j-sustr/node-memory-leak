@@ -109,6 +109,9 @@ class SnapshotService {
         fileStream.on("finish", resolve);
         fileStream.on("error", reject);
         snapshotStream.on("error", reject);
+      }).catch((err) => {
+        this.logger.error(err, `Failed to write heap snapshot to ${filePath}`);
+        throw err;
       });
 
       if (isAuto) {

@@ -15,7 +15,7 @@ const root: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
 
     // Allocate memory in chunks to avoid blocking the event loop for too long
     // Each object is roughly 100 characters, so 1 million objects is ~100MB
-    const numItems = 2_000_000; // Adjust this number based on your memoryThresholdMB
+    const numItems = 1_000_000; // Adjust this number based on your memoryThresholdMB
     for (let i = 0; i < numItems; i++) {
       memoryConsumer.push({
         id: i,
