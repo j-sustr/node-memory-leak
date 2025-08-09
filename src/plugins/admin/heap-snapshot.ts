@@ -1,4 +1,4 @@
-import { FastifyPluginAsync, FastifyReply, FastifyRequest, FastifyBaseLogger } from "fastify";
+import type { FastifyPluginAsync, FastifyReply, FastifyRequest, FastifyBaseLogger } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { getHeapSnapshot } from "v8";
 import { createWriteStream, createReadStream, ReadStream } from "node:fs";
@@ -53,7 +53,7 @@ interface MonitoringStatus {
 }
 
 // ===== HELPERS =====
-const defaultSnapshotsDirectory = () => path.join(__dirname, "../../snapshots");
+const defaultSnapshotsDirectory = () => path.join(__dirname, "../../../snapshots");
 const generateSnapshotFileName = (prefix = "heap-snapshot") =>
   `${prefix}-${new Date()
     .toISOString()

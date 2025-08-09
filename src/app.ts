@@ -1,8 +1,8 @@
 import * as path from "node:path";
-import AutoLoad, { AutoloadPluginOptions } from "@fastify/autoload";
-import { FastifyPluginAsync } from "fastify";
+import AutoLoad, { type AutoloadPluginOptions } from "@fastify/autoload";
+import type { FastifyPluginAsync } from "fastify";
 import { fileURLToPath } from "node:url";
-import heapSnapshot from "./plugins/admin/heap-snapshot.js";
+import heapSnapshot from "./plugins/admin/heap-snapshot.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
