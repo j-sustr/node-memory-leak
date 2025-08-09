@@ -1,12 +1,11 @@
 import { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
 import fastifyPlugin from "fastify-plugin";
-import { getHeapSnapshot } from "v8";
 import { createWriteStream } from "fs";
-import * as path from "path";
+import { createReadStream, ReadStream } from "node:fs";
+import { mkdir, readdir, stat, unlink } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { readdir, unlink, stat, mkdir } from "node:fs/promises";
-import { createReadStream, ReadStream, WriteStream } from "node:fs";
-import { pipeline } from "stream/promises";
+import * as path from "path";
+import { getHeapSnapshot } from "v8";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
