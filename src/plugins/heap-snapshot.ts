@@ -14,7 +14,8 @@ const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> =>
 
   fastify.get('/heap-snapshot', (request, reply) => {
     const snapshotStream = getHeapSnapshot();
-    const fileName = `heap-snapshot-${Date.now()}.heapsnapshot`;
+    const isoTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+    const fileName = `heap-snapshot-${isoTimestamp}.heapsnapshot`;
     const filePath = path.join(snapshotsDir, fileName);
     const fileStream = createWriteStream(filePath);
     snapshotStream.pipe(fileStream);
