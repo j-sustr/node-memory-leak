@@ -11,14 +11,6 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
-  console.log('Heap snapshot plugin loading...');
-
-  // Add a check to prevent duplicate route registration
-  // if (fastify.hasRoute({ method: 'GET', url: '/heap-snapshot' })) {
-  //   console.log('Route /heap-snapshot already registered. Skipping.');
-  //   return;
-  // }
-
   const snapshotsDir = path.join(__dirname, '../../snapshots');
 
   fastify.get('/heap-snapshot', (request, reply) => {
