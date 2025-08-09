@@ -11,6 +11,12 @@ import { pipeline } from "stream/promises";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    routerPath?: string;
+  }
+}
+
 // ===== TYPES =====
 interface CleanupQuery {
   seconds: number;
