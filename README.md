@@ -1,23 +1,20 @@
-# Getting Started with [Fastify-CLI](https://www.npmjs.com/package/fastify-cli)
-This project was bootstrapped with Fastify-CLI.
 
-## Available Scripts
+## Create a Heap Snapshot
+```sh
+curl -X POST http://localhost:3000/heap-snapshot \
+     -H "x-admin-key: YOUR_ADMIN_KEY"
+```
 
-In the project directory, you can run:
 
-### `npm run dev`
 
-To start the app in dev mode.\
-Open [http://localhost:3000](http://localhost:3000) to view it in the browser.
+## List Heap Snapshots
+```
+curl -X GET http://localhost:3000/heap-snapshot/list -H "x-admin-key: my-admin-key
+```
 
-### `npm start`
-
-For production mode
-
-### `npm run test`
-
-Run the test cases.
-
-## Learn More
-
-To learn Fastify, check out the [Fastify documentation](https://fastify.dev/docs/latest/).
+## Download a Heap Snapshot
+```sh
+curl -X GET "http://localhost:3000/heap-snapshot/download/heap-snapshot-2025-08-09T13-45-23-456Z.heapsnapshot" \
+     -H "x-admin-key: YOUR_ADMIN_KEY" \
+     -o snapshot.heapsnapshot
+```

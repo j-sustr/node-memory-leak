@@ -172,7 +172,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
   };
 
   // --- Routes ---
-  fastify.get(
+  fastify.post(
     "/heap-snapshot",
     { preHandler: verifyAdmin },
     async (req, reply) => {
