@@ -216,22 +216,56 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
     },
     async (req, reply) => {
       const { fileName } = req.params as RouteParams;
+
       try {
-        const stream = await service.getSnapshotStream(fileName);
-        reply.header("Content-Type", "application/octet-stream");
-        reply.header(
-          "Content-Disposition",
-          `attachment; filename="${fileName}"`
-        );
-        reply.send(stream);
+        if (!FILE_NAME_REGEX.test(fileName)) {
+          return reply.status(400).send({ error: "Invalid file name" });
+        }
+
+        const filePath = path.join(snapshotsDir, fileName);
+        const stats = await stat(filePath);
+
+        console.log(`Serving ${fileName}, size=${stats.size} bytes`);
+
+        // Set all headers first
+        reply.raw.writeHead(200, {
+          "Content-Type": "application/octet-stream",
+          "Content-Disposition": `attachment; filename="${fileName}"`,
+          "Content-Length": stats.size.toString(),
+        });
+
+        // Create and pipe the stream directly to the raw response
+        const stream = createReadStream(filePath);
+
+        stream.on("error", (err) => {
+          console.error(`Stream error for ${fileName}:`, err);
+          if (!reply.raw.headersSent) {
+            reply.raw.writeHead(500);
+            reply.raw.end("Stream error");
+          } else {
+            reply.raw.destroy();
+          }
+        });
+
+        stream.on("end", () => {
+          console.log(`✅ Successfully served ${fileName}`);
+        });
+
+        // Pipe directly to the raw response
+        stream.pipe(reply.raw);
+
+        // Return reply to prevent Fastify from trying to send anything else
+        return reply;
       } catch (err: any) {
-        if (err.code === "ENOENT")
+        console.error(`Download error for ${fileName}:`, err);
+
+        if (err.code === "ENOENT") {
           return reply
             .status(404)
             .send({ error: `File not found: ${fileName}` });
-        if (err.code === "EINVALIDNAME")
-          return reply.status(400).send({ error: "Invalid file name" });
-        reply.status(500).send({ error: "Failed to access file" });
+        }
+
+        return reply.status(500).send({ error: "Failed to access file" });
       }
     }
   );
