@@ -301,7 +301,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
     service.startAutoMonitoring();
 
     // Stop monitoring on server close
-    fastify.addHook('onClose', async () => {
+    fastify.addHook('onClose', async (_fastify) => {
       service.stopAutoMonitoring();
     });
   }
