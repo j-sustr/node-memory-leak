@@ -301,7 +301,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
             stream.destroy();
           } catch {}
         };
-        reqRaw.once && reqRaw.once("close", onClose);
+        reqRaw.once("close", onClose);
 
         // stream errors are caught by fastify if we just reply.send(stream) but we want to log
         stream.on("error", (err) => {
@@ -313,7 +313,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
 
         // When reply is finished, remove listener
         reply.raw.once("finish", () => {
-          reqRaw.once && reqRaw.removeListener && reqRaw.removeListener("close", onClose);
+          reqRaw.removeListener("close", onClose);
           request.log.info({ action: "downloadSnapshot", fileName }, "Download finished");
         });
       } catch (error) {
