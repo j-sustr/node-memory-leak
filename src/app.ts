@@ -28,7 +28,10 @@ const app: FastifyPluginAsync<AppOptions> = async (
   // eslint-disable-next-line no-void
   void fastify.register(AutoLoad, {
     dir: path.join(__dirname, 'plugins'),
-    options: opts,
+    options: {
+      adminApiKey: "my-admin-key",
+      ...opts
+    },
     forceESM: true
   })
 
