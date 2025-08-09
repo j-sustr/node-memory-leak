@@ -1,19 +1,18 @@
-import * as path from 'node:path'
-import AutoLoad, { AutoloadPluginOptions } from '@fastify/autoload'
-import { FastifyPluginAsync } from 'fastify'
-import { fileURLToPath } from 'node:url'
-import heapSnapshot from './plugins/admin/heap-snapshot.js'
+import * as path from "node:path";
+import AutoLoad, { AutoloadPluginOptions } from "@fastify/autoload";
+import { FastifyPluginAsync } from "fastify";
+import { fileURLToPath } from "node:url";
+import heapSnapshot from "./plugins/admin/heap-snapshot.js";
 
-const __filename = fileURLToPath(import.meta.url)
-const __dirname = path.dirname(__filename)
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export type AppOptions = {
   // Place your custom options for app below here.
-} & Partial<AutoloadPluginOptions>
+} & Partial<AutoloadPluginOptions>;
 
 // Pass --options via CLI arguments in command to enable these options.
-const options: AppOptions = {
-}
+const options: AppOptions = {};
 
 const app: FastifyPluginAsync<AppOptions> = async (
   fastify,
@@ -28,24 +27,26 @@ const app: FastifyPluginAsync<AppOptions> = async (
   // through your application
   // eslint-disable-next-line no-void
   void fastify.register(AutoLoad, {
-    dir: path.join(__dirname, 'plugins/core'),
+    dir: path.join(__dirname, "plugins/core"),
     options: opts,
-    forceESM: true
-  })
+    forceESM: true,
+  });
 
   fastify.register(heapSnapshot, {
-     adminApiKey: "my-admin-key"
-  })
+    adminApiKey: "my-admin-key",
+    memoryThresholdMB: 100, // Set a low threshold for easy testing
+    monitorIntervalSeconds: 5, // Check frequently
+  });
 
   // This loads all plugins defined in routes
   // define your routes in one of these
   // eslint-disable-next-line no-void
   void fastify.register(AutoLoad, {
-    dir: path.join(__dirname, 'routes'),
+    dir: path.join(__dirname, "routes"),
     options: opts,
-    forceESM: true
-  })
-}
+    forceESM: true,
+  });
+};
 
-export default app
-export { app, options }
+export default app;
+export { app, options };
