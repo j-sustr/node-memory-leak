@@ -16,5 +16,5 @@ curl -X GET http://localhost:3000/heap-snapshot/list -H "x-admin-key: my-admin-k
 ```sh
 curl -X GET "http://localhost:3000/heap-snapshot/download/heap-snapshot-2025-08-09T13-45-23-456Z.heapsnapshot" \
      -H "x-admin-key: YOUR_ADMIN_KEY" \
-     -o snapshot.heapsnapshot
+     -o snapshot.heapsnapshot -v
 ```
