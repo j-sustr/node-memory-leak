@@ -11,7 +11,7 @@ import { pipeline } from "stream/promises";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-declare module 'fastify' {
+declare module "fastify" {
   interface FastifyRequest {
     routerPath?: string;
   }
@@ -95,7 +95,9 @@ class SnapshotService {
       const filePath = path.join(this.snapshotsDir, fileName);
 
       // pipe + await for completion and propagate errors
-      const fileStream: WriteStream = createWriteStream(filePath, { flags: "wx" });
+      const fileStream: WriteStream = createWriteStream(filePath, {
+        flags: "wx",
+      });
 
       // Use pipeline to properly handle errors
       await pipeline(snapshotStream as any, fileStream as any);
@@ -184,27 +186,41 @@ class SnapshotService {
 }
 
 // ===== MAIN PLUGIN =====
-const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) => {
+const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
+  fastify,
+  opts
+) => {
   const adminApiKey = opts?.adminApiKey ?? process.env.ADMIN_API_KEY ?? "";
   const maxConcurrentCreates = opts?.maxConcurrentCreates ?? 1;
   const maxDeleteThreshold = opts?.maxDeleteThreshold ?? 100; // if more than this, require force
   const snapshotsDir = opts?.snapshotsDir ?? defaultSnapshotsDirectory();
 
-  const snapshotService = new SnapshotService(snapshotsDir, maxConcurrentCreates);
+  const snapshotService = new SnapshotService(
+    snapshotsDir,
+    maxConcurrentCreates
+  );
   await snapshotService.ensureDirExists();
 
   // ----- helper: auth preHandler -----
   const verifyAdmin = async (request: FastifyRequest, reply: FastifyReply) => {
     // If no adminApiKey configured, deny to avoid accidental exposure.
     if (!adminApiKey) {
-      request.log.warn({ route: request.routerPath }, "Admin API key not configured - denying access");
+      request.log.warn(
+        { route: request.routerPath },
+        "Admin API key not configured - denying access"
+      );
       reply.status(401).send({ error: "Admin API not configured" });
       return;
     }
 
-    const provided = (request.headers as any)["x-admin-key"] as string | undefined;
+    const provided = (request.headers as any)["x-admin-key"] as
+      | string
+      | undefined;
     if (!provided || provided !== adminApiKey) {
-      request.log.warn({ route: request.routerPath, ip: request.ip }, "Unauthorized admin access attempt");
+      request.log.warn(
+        { route: request.routerPath, ip: request.ip },
+        "Unauthorized admin access attempt"
+      );
       reply.status(401).send({ error: "Unauthorized" });
     }
   };
@@ -229,13 +245,24 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
       },
     },
     async (request, reply) => {
-      request.log.info({ action: "createSnapshot", ip: request.ip }, "Create snapshot requested");
+      request.log.info(
+        { action: "createSnapshot", ip: request.ip },
+        "Create snapshot requested"
+      );
       try {
         const fileName = await snapshotService.createSnapshot();
-        request.log.info({ action: "createSnapshot", fileName }, "Snapshot created");
-        reply.code(200).send({ message: `Heap snapshot written to ${fileName}` });
+        request.log.info(
+          { action: "createSnapshot", fileName },
+          "Snapshot created"
+        );
+        reply
+          .code(200)
+          .send({ message: `Heap snapshot written to ${fileName}` });
       } catch (error) {
-        request.log.error({ err: error, action: "createSnapshot" }, "Failed to create heap snapshot");
+        request.log.error(
+          { err: error, action: "createSnapshot" },
+          "Failed to create heap snapshot"
+        );
         reply.status(500).send({ error: "Failed to create heap snapshot" });
       }
     }
@@ -256,12 +283,18 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
       },
     },
     async (request, reply) => {
-      request.log.info({ action: "listSnapshots", ip: request.ip }, "Listing snapshots");
+      request.log.info(
+        { action: "listSnapshots", ip: request.ip },
+        "Listing snapshots"
+      );
       try {
         const files = await snapshotService.listSnapshots();
         reply.code(200).send(files);
       } catch (error) {
-        request.log.error({ err: error, action: "listSnapshots" }, "Failed to read snapshots directory");
+        request.log.error(
+          { err: error, action: "listSnapshots" },
+          "Failed to read snapshots directory"
+        );
         reply.status(500).send({ error: "Failed to read snapshots directory" });
       }
     }
@@ -284,19 +317,30 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
     },
     async (request, reply) => {
       const { fileName } = request.params as RouteParams;
-      request.log.info({ action: "downloadSnapshot", fileName, ip: request.ip }, "Download requested");
+      request.log.info(
+        { action: "downloadSnapshot", fileName, ip: request.ip },
+        "Download requested"
+      );
 
       try {
         const stream = await snapshotService.getSnapshotStream(fileName);
 
         // set headers
         reply.header("Content-Type", "application/octet-stream");
-        reply.header("Content-Disposition", `attachment; filename="${fileName}"`);
+        reply.header(
+          "Content-Disposition",
+          `attachment; filename="${fileName}"`
+        );
 
         // handle client disconnect: if client closes, destroy the stream to free resources
-        const reqRaw = (request.raw as NodeJS.ReadableStream & { destroyed?: boolean });
+        const reqRaw = request.raw as NodeJS.ReadableStream & {
+          destroyed?: boolean;
+        };
         const onClose = () => {
-          request.log.info({ action: "downloadSnapshot", fileName }, "Client disconnected while downloading snapshot");
+          request.log.info(
+            { action: "downloadSnapshot", fileName },
+            "Client disconnected while downloading snapshot"
+          );
           try {
             stream.destroy();
           } catch {}
@@ -305,7 +349,10 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
 
         // stream errors are caught by fastify if we just reply.send(stream) but we want to log
         stream.on("error", (err) => {
-          request.log.error({ err, fileName }, "Stream error on snapshot download");
+          request.log.error(
+            { err, fileName },
+            "Stream error on snapshot download"
+          );
         });
 
         // Fastify will handle the piping of the stream
@@ -314,7 +361,10 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
         // When reply is finished, remove listener
         reply.raw.once("finish", () => {
           reqRaw.removeListener("close", onClose);
-          request.log.info({ action: "downloadSnapshot", fileName }, "Download finished");
+          request.log.info(
+            { action: "downloadSnapshot", fileName },
+            "Download finished"
+          );
         });
       } catch (error) {
         if ((error as any).code === "ENOENT") {
@@ -341,24 +391,46 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
           type: "object",
           required: ["seconds"],
           properties: {
-            seconds: { type: "integer", minimum: 1, maximum: 60 * 60 * 24 * 3650 }, // up to ~10 years
+            seconds: {
+              type: "integer",
+              minimum: 1,
+              maximum: 60 * 60 * 24 * 3650,
+            }, // up to ~10 years
           },
         },
       },
     },
     async (request, reply) => {
       const { seconds } = request.query as any as CleanupQuery;
-      const force = ((request.headers as any)["x-force-cleanup"] || "false").toLowerCase() === "true";
+      const force =
+        (
+          (request.headers as any)["x-force-cleanup"] || "false"
+        ).toLowerCase() === "true";
 
-      request.log.info({ action: "cleanupRequest", seconds, ip: request.ip, force }, "Cleanup requested (dry-run)");
+      request.log.info(
+        { action: "cleanupRequest", seconds, ip: request.ip, force },
+        "Cleanup requested (dry-run)"
+      );
 
       try {
         // Safety: compute which files would be deleted first (dry-run)
-        const candidates = await snapshotService.listSnapshotsOlderThan(seconds);
-        request.log.info({ action: "cleanupDryRun", seconds, candidatesCount: candidates.length }, "Cleanup dry-run completed");
+        const candidates = await snapshotService.listSnapshotsOlderThan(
+          seconds
+        );
+        request.log.info(
+          {
+            action: "cleanupDryRun",
+            seconds,
+            candidatesCount: candidates.length,
+          },
+          "Cleanup dry-run completed"
+        );
 
         if (candidates.length === 0) {
-          request.log.info({ action: "cleanup", seconds }, "No snapshots matched cleanup criteria");
+          request.log.info(
+            { action: "cleanup", seconds },
+            "No snapshots matched cleanup criteria"
+          );
           return reply.code(200).send({
             message: "No snapshots matched cleanup criteria",
             deletedFiles: [],
@@ -368,21 +440,42 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (fastify, opts) =>
 
         // If too many files will be deleted, require force header to proceed
         if (candidates.length > maxDeleteThreshold && !force) {
-          request.log.warn({ action: "cleanupBlocked", seconds, candidatesCount: candidates.length, threshold: maxDeleteThreshold }, "Cleanup would delete too many files - blocked without X-Force-Cleanup");
+          request.log.warn(
+            {
+              action: "cleanupBlocked",
+              seconds,
+              candidatesCount: candidates.length,
+              threshold: maxDeleteThreshold,
+            },
+            "Cleanup would delete too many files - blocked without X-Force-Cleanup"
+          );
           return reply.status(429).send({
             error: `Cleanup would delete ${candidates.length} files which is above the allowed threshold of ${maxDeleteThreshold}. Re-run with header 'X-Force-Cleanup: true' to force deletion.`,
           });
         }
 
         // Audit log BEFORE deletion
-        request.log.info({ action: "cleanupProceed", seconds, candidatesCount: candidates.length }, "Proceeding to delete snapshots");
+        request.log.info(
+          {
+            action: "cleanupProceed",
+            seconds,
+            candidatesCount: candidates.length,
+          },
+          "Proceeding to delete snapshots"
+        );
 
         const result = await snapshotService.cleanupOldSnapshots(seconds);
 
-        request.log.info({ action: "cleanupComplete", result }, "Cleanup completed");
+        request.log.info(
+          { action: "cleanupComplete", result },
+          "Cleanup completed"
+        );
         reply.code(200).send(result);
       } catch (error) {
-        request.log.error({ err: error, action: "cleanup" }, "Failed to cleanup snapshots");
+        request.log.error(
+          { err: error, action: "cleanup" },
+          "Failed to cleanup snapshots"
+        );
         reply.status(500).send({ error: "Failed to cleanup snapshots" });
       }
     }
