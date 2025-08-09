@@ -1,14 +1,24 @@
 
 import { FastifyPluginAsync } from 'fastify';
+import fastifyPlugin from 'fastify-plugin';
 import { getHeapSnapshot } from 'v8';
-import { createWriteStream, readdirSync, createReadStream } from 'fs';
+import { createWriteStream } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'node:url';
+import { createReadStream, readdirSync } from 'node:fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
+  console.log('Heap snapshot plugin loading...');
+
+  // Add a check to prevent duplicate route registration
+  // if (fastify.hasRoute({ method: 'GET', url: '/heap-snapshot' })) {
+  //   console.log('Route /heap-snapshot already registered. Skipping.');
+  //   return;
+  // }
+
   const snapshotsDir = path.join(__dirname, '../../snapshots');
 
   fastify.get('/heap-snapshot', (request, reply) => {
@@ -36,4 +46,4 @@ const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> =>
   });
 };
 
-export default heapSnapshot;
+export default fastifyPlugin(heapSnapshot);
