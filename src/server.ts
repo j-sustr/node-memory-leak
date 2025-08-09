@@ -25,7 +25,7 @@ closeWithGrace({ delay: parseInt(process.env.FASTIFY_CLOSE_GRACE_DELAY || "500")
 } as closeWithGrace.CloseWithGraceAsyncCallback)
 
 // Start listening.
-app.listen({ port: parseInt(process.env.PORT) || 3000 }, (err: any) => {
+app.listen({ port: parseInt(process.env.PORT || "3000") }, (err: any) => {
   if (err) {
     app.log.error(err)
     process.exit(1)
