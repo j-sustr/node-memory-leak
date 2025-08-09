@@ -99,7 +99,8 @@ class SnapshotService {
       throw err;
     }
     const filePath = path.join(this.snapshotsDir, fileName);
-    await stat(filePath);
+    const stats = await stat(filePath);
+    console.log(`Serving ${fileName}, size=${stats.size} bytes`);
     return createReadStream(filePath);
   }
 
@@ -208,7 +209,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
           type: "object",
           required: ["fileName"],
           properties: {
-            fileName: { type: "string", pattern: FILE_NAME_REGEX.source },
+            fileName: { type: "string" },
           },
         },
       },
@@ -261,19 +262,15 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
       try {
         const candidates = await service.listSnapshotsOlderThan(seconds);
         if (!candidates.length)
-          return reply
-            .code(200)
-            .send({
-              message: "No snapshots matched cleanup criteria",
-              deletedFiles: [],
-              deletedCount: 0,
-            });
+          return reply.code(200).send({
+            message: "No snapshots matched cleanup criteria",
+            deletedFiles: [],
+            deletedCount: 0,
+          });
         if (candidates.length > maxDeleteThreshold && !force) {
-          return reply
-            .status(429)
-            .send({
-              error: `Would delete ${candidates.length} files, above threshold ${maxDeleteThreshold}. Use X-Force-Cleanup: true to force.`,
-            });
+          return reply.status(429).send({
+            error: `Would delete ${candidates.length} files, above threshold ${maxDeleteThreshold}. Use X-Force-Cleanup: true to force.`,
+          });
         }
         reply.code(200).send(await service.cleanupOldSnapshots(seconds));
       } catch {
