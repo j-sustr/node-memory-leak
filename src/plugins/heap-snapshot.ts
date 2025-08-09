@@ -4,7 +4,8 @@ import { getHeapSnapshot } from 'v8';
 import { createWriteStream } from 'fs';
 import * as path from 'path';
 import { fileURLToPath } from 'node:url';
-import { createReadStream, readdirSync, unlinkSync, statSync } from 'node:fs';
+import { readdir, unlink, stat } from 'node:fs/promises';
+import { createReadStream } from 'node:fs';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -25,16 +26,33 @@ const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> =>
     });
   });
 
-  fastify.get('/heap-snapshot/list', (request, reply) => {
-    const files = readdirSync(snapshotsDir);
-    reply.send(files);
+  fastify.get('/heap-snapshot/list', async (request, reply) => {
+    try {
+      const files = await readdir(snapshotsDir);
+      reply.send(files);
+    } catch (error) {
+      fastify.log.error(error, 'Failed to read snapshots directory');
+      reply.status(500).send({
+        error: 'Failed to read snapshots directory',
+      });
+    }
   });
 
-  fastify.get('/heap-snapshot/download/:fileName', (request, reply) => {
+  fastify.get('/heap-snapshot/download/:fileName', async (request, reply) => {
     const { fileName } = request.params as { fileName: string };
     const filePath = path.join(snapshotsDir, fileName);
-    const stream = createReadStream(filePath);
-    reply.send(stream);
+    
+    try {
+      // Check if file exists before attempting to stream it
+      await stat(filePath);
+      const stream = createReadStream(filePath);
+      reply.send(stream);
+    } catch (error) {
+      fastify.log.error(error, `Failed to access file: ${fileName}`);
+      reply.status(404).send({
+        error: `File not found: ${fileName}`,
+      });
+    }
   });
 
   fastify.delete('/heap-snapshot/cleanup', async (request, reply) => {
@@ -50,7 +68,7 @@ const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> =>
     const cutoffDate = new Date(Date.now() - (daysThreshold * 24 * 60 * 60 * 1000));
     
     try {
-      const files = readdirSync(snapshotsDir);
+      const files = await readdir(snapshotsDir);
       const heapSnapshotFiles = files.filter(file => file.endsWith('.heapsnapshot'));
       
       let deletedCount = 0;
@@ -60,10 +78,10 @@ const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> =>
       for (const file of heapSnapshotFiles) {
         try {
           const filePath = path.join(snapshotsDir, file);
-          const stats = statSync(filePath);
+          const stats = await stat(filePath);
           
           if (stats.mtime < cutoffDate) {
-            unlinkSync(filePath);
+            await unlink(filePath);
             deletedFiles.push(file);
             deletedCount++;
           }
