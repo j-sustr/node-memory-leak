@@ -9,5 +9,5 @@ test('example is loaded', async (t) => {
     url: '/example'
   })
 
-  assert.equal(res.payload, 'this is an example')
+  assert.equal(res.payload, 'this is an example. Leaky data size: 1')
 })
