@@ -1,4 +1,4 @@
-import { FastifyPluginAsync, FastifyReply, FastifyRequest } from "fastify";
+import { FastifyPluginAsync, FastifyReply, FastifyRequest, FastifyBaseLogger } from "fastify";
 import fastifyPlugin from "fastify-plugin";
 import { getHeapSnapshot } from "v8";
 import { createWriteStream, createReadStream, ReadStream } from "node:fs";
@@ -69,9 +69,10 @@ class SnapshotService {
   private autoSnapshotsCount = 0;
   private lastSnapshotTime?: Date;
   private lastCheckTime = new Date();
-  
+
   constructor(
     private snapshotsDir: string,
+    private logger: FastifyBaseLogger,
     private maxConcurrentCreates: number = 1,
     private autoMonitorEnabled: boolean = false,
     private memoryThresholdMB: number = 512,
@@ -90,7 +91,7 @@ class SnapshotService {
     }
     this.creatingCount++;
   }
-  
+
   private releaseCreateSlot() {
     if (this.creatingCount > 0) this.creatingCount--;
   }
@@ -109,13 +110,13 @@ class SnapshotService {
         fileStream.on("error", reject);
         snapshotStream.on("error", reject);
       });
-      
+
       if (isAuto) {
         this.autoSnapshotsCount++;
         this.lastSnapshotTime = new Date();
-        console.log(`📸 Auto-created heap snapshot: ${fileName} (${this.autoSnapshotsCount}/${this.maxAutoSnapshots})`);
+        this.logger.info(`📸 Auto-created heap snapshot: ${fileName} (${this.autoSnapshotsCount}/${this.maxAutoSnapshots})`);
       }
-      
+
       return fileName;
     } finally {
       this.releaseCreateSlot();
@@ -136,7 +137,7 @@ class SnapshotService {
     }
     const filePath = path.join(this.snapshotsDir, fileName);
     const stats = await stat(filePath);
-    console.log(`Serving ${fileName}, size=${stats.size} bytes`);
+    this.logger.info(`Serving ${fileName}, size=${stats.size} bytes`);
     return createReadStream(filePath);
   }
 
@@ -155,7 +156,7 @@ class SnapshotService {
         if ((await stat(filePath)).mtime < cutoff) {
           await unlink(filePath);
           deletedFiles.push(file);
-          
+
           // Update auto snapshot count if we deleted an auto snapshot
           if (file.includes(this.autoSnapshotPrefix) && this.autoSnapshotsCount > 0) {
             this.autoSnapshotsCount--;
@@ -191,24 +192,24 @@ class SnapshotService {
   }
 
   // ===== AUTO-MONITORING METHODS =====
-  
+
   private async checkMemoryAndCreateSnapshot() {
     this.lastCheckTime = new Date();
     const currentMemoryMB = getMemoryUsageMB();
-    
-    console.log(`🔍 Memory check: ${currentMemoryMB}MB (threshold: ${this.memoryThresholdMB}MB)`);
-    
+
+    this.logger.info(`🔍 Memory check: ${currentMemoryMB}MB (threshold: ${this.memoryThresholdMB}MB)`);
+
     if (currentMemoryMB >= this.memoryThresholdMB) {
       if (this.autoSnapshotsCount >= this.maxAutoSnapshots) {
-        console.log(`⚠️  Memory threshold exceeded but max auto snapshots reached (${this.maxAutoSnapshots})`);
+        this.logger.info(`⚠️  Memory threshold exceeded but max auto snapshots reached (${this.maxAutoSnapshots})`);
         return;
       }
-      
+
       try {
-        console.log(`🚨 Memory threshold exceeded! Creating auto snapshot...`);
+        this.logger.info(`🚨 Memory threshold exceeded! Creating auto snapshot...`);
         await this.createSnapshot(this.autoSnapshotPrefix, true);
       } catch (err) {
-        console.error(`❌ Failed to create auto snapshot:`, err);
+        this.logger.error(err, `❌ Failed to create auto snapshot`);
       }
     }
   }
@@ -218,17 +219,17 @@ class SnapshotService {
       return;
     }
 
-    console.log(`🎯 Starting auto memory monitoring (threshold: ${this.memoryThresholdMB}MB, interval: ${this.monitorIntervalSeconds}s, max snapshots: ${this.maxAutoSnapshots})`);
-    
+    this.logger.info(`🎯 Starting auto memory monitoring (threshold: ${this.memoryThresholdMB}MB, interval: ${this.monitorIntervalSeconds}s, max snapshots: ${this.maxAutoSnapshots})`);
+
     this.monitorTimer = setInterval(() => {
       this.checkMemoryAndCreateSnapshot().catch(err => {
-        console.error('Error in auto memory monitoring:', err);
+        this.logger.error(err, 'Error in auto memory monitoring');
       });
     }, this.monitorIntervalSeconds * 1000);
 
     // Initial check
     this.checkMemoryAndCreateSnapshot().catch(err => {
-      console.error('Error in initial memory check:', err);
+      this.logger.error(err, 'Error in initial memory check');
     });
   }
 
@@ -236,7 +237,7 @@ class SnapshotService {
     if (this.monitorTimer) {
       clearInterval(this.monitorTimer);
       this.monitorTimer = undefined;
-      console.log('🛑 Stopped auto memory monitoring');
+      this.logger.info('🛑 Stopped auto memory monitoring');
     }
   }
 
@@ -257,7 +258,7 @@ class SnapshotService {
     // Count existing auto snapshots to sync the counter
     const files = await this.listSnapshots();
     this.autoSnapshotsCount = files.filter(f => f.includes(this.autoSnapshotPrefix)).length;
-    console.log(`🔄 Reset auto snapshot counter to ${this.autoSnapshotsCount}`);
+    this.logger.info(`🔄 Reset auto snapshot counter to ${this.autoSnapshotsCount}`);
   }
 }
 
@@ -270,7 +271,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
   const maxConcurrentCreates = opts.maxConcurrentCreates ?? 1;
   const maxDeleteThreshold = opts.maxDeleteThreshold ?? 100;
   const snapshotsDir = opts.snapshotsDir ?? defaultSnapshotsDirectory();
-  
+
   // Auto-monitoring options
   const autoMonitorEnabled = opts.autoMonitorEnabled ?? false;
   const memoryThresholdMB = opts.memoryThresholdMB ?? 512;
@@ -279,7 +280,8 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
   const autoSnapshotPrefix = opts.autoSnapshotPrefix ?? "auto-heap-snapshot";
 
   const service = new SnapshotService(
-    snapshotsDir, 
+    snapshotsDir,
+    fastify.log,
     maxConcurrentCreates,
     autoMonitorEnabled,
     memoryThresholdMB,
@@ -287,14 +289,14 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
     maxAutoSnapshots,
     autoSnapshotPrefix
   );
-  
+
   await service.ensureDirExists();
   await service.resetAutoSnapshotCounter();
 
   // Start auto-monitoring if enabled
   if (autoMonitorEnabled) {
     service.startAutoMonitoring();
-    
+
     // Stop monitoring on server close
     fastify.addHook('onClose', async () => {
       service.stopAutoMonitoring();
@@ -320,7 +322,8 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
         reply
           .code(200)
           .send({ message: `Heap snapshot written to ${fileName}` });
-      } catch {
+      } catch (err) {
+        fastify.log.error(err, "Failed to create heap snapshot");
         reply.status(500).send({ error: "Failed to create heap snapshot" });
       }
     }
@@ -332,7 +335,8 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
     async (_, reply) => {
       try {
         reply.code(200).send(await service.listSnapshots());
-      } catch {
+      } catch (err) {
+        fastify.log.error(err, "Failed to read snapshots directory");
         reply.status(500).send({ error: "Failed to read snapshots directory" });
       }
     }
@@ -345,7 +349,8 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
     async (_, reply) => {
       try {
         reply.code(200).send(service.getMonitoringStatus());
-      } catch {
+      } catch (err) {
+        fastify.log.error(err, "Failed to get monitoring status");
         reply.status(500).send({ error: "Failed to get monitoring status" });
       }
     }
@@ -368,7 +373,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
     },
     async (req, reply) => {
       const { action } = req.params as { action: "start" | "stop" };
-      
+
       try {
         if (action === "start") {
           service.startAutoMonitoring();
@@ -378,6 +383,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
           reply.code(200).send({ message: "Auto-monitoring stopped" });
         }
       } catch (err) {
+        fastify.log.error(err, `Failed to ${action} monitoring`);
         reply.status(500).send({ error: `Failed to ${action} monitoring` });
       }
     }
@@ -408,7 +414,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
         const filePath = path.join(snapshotsDir, fileName);
         const stats = await stat(filePath);
 
-        console.log(`Serving ${fileName}, size=${stats.size} bytes`);
+        fastify.log.info(`Serving ${fileName}, size=${stats.size} bytes`);
 
         // Set all headers first
         reply.raw.writeHead(200, {
@@ -421,7 +427,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
         const stream = createReadStream(filePath);
 
         stream.on("error", (err) => {
-          console.error(`Stream error for ${fileName}:`, err);
+          fastify.log.error(err, `Stream error for ${fileName}`);
           if (!reply.raw.headersSent) {
             reply.raw.writeHead(500);
             reply.raw.end("Stream error");
@@ -431,7 +437,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
         });
 
         stream.on("end", () => {
-          console.log(`✅ Successfully served ${fileName}`);
+          fastify.log.info(`✅ Successfully served ${fileName}`);
         });
 
         // Pipe directly to the raw response
@@ -440,7 +446,7 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
         // Return reply to prevent Fastify from trying to send anything else
         return reply;
       } catch (err: any) {
-        console.error(`Download error for ${fileName}:`, err);
+        fastify.log.error(err, `Download error for ${fileName}`);
 
         if (err.code === "ENOENT") {
           return reply
@@ -490,7 +496,8 @@ const heapSnapshot: FastifyPluginAsync<PluginOptions> = async (
           });
         }
         reply.code(200).send(await service.cleanupOldSnapshots(seconds));
-      } catch {
+      } catch (err) {
+        fastify.log.error(err, "Failed to cleanup snapshots");
         reply.status(500).send({ error: "Failed to cleanup snapshots" });
       }
     }
