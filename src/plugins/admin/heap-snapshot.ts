@@ -87,6 +87,7 @@ class SnapshotService {
 
   private async acquireCreateSlot() {
     while (this.creatingCount >= this.maxConcurrentCreates) {
+      this.logger.warn(`Waiting for create slot, current count: ${this.creatingCount}/${this.maxConcurrentCreates}`);
       await new Promise((r) => setTimeout(r, 100));
     }
     this.creatingCount++;
