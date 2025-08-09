@@ -10,105 +10,183 @@ import { createReadStream } from 'node:fs';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
-  const snapshotsDir = path.join(__dirname, '../../snapshots');
+// ===== TYPES =====
+interface CleanupQuery {
+  days?: string;
+}
 
-  fastify.get('/heap-snapshot', (request, reply) => {
-    const snapshotStream = getHeapSnapshot();
-    const isoTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
-    const fileName = `heap-snapshot-${isoTimestamp}.heapsnapshot`;
-    const filePath = path.join(snapshotsDir, fileName);
-    const fileStream = createWriteStream(filePath);
-    snapshotStream.pipe(fileStream);
+interface RouteParams {
+  fileName: string;
+}
 
-    snapshotStream.on('end', () => {
-      reply.send({ message: `Heap snapshot written to ${fileName}` });
+interface CleanupResponse {
+  message: string;
+  deletedFiles: string[];
+  deletedCount: number;
+  errors?: string[];
+}
+
+// ===== UTILITIES =====
+const getSnapshotsDirectory = (): string => {
+  return path.join(__dirname, '../../snapshots');
+};
+
+const generateSnapshotFileName = (): string => {
+  const isoTimestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  return `heap-snapshot-${isoTimestamp}.heapsnapshot`;
+};
+
+const validateDaysParameter = (days?: string): number | null => {
+  if (!days || isNaN(Number(days))) {
+    return null;
+  }
+  return Number(days);
+};
+
+const calculateCutoffDate = (days: number): Date => {
+  return new Date(Date.now() - (days * 24 * 60 * 60 * 1000));
+};
+
+// ===== SNAPSHOT SERVICE =====
+class SnapshotService {
+  private snapshotsDir: string;
+
+  constructor() {
+    this.snapshotsDir = getSnapshotsDirectory();
+  }
+
+  async createSnapshot(): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const snapshotStream = getHeapSnapshot();
+      const fileName = generateSnapshotFileName();
+      const filePath = path.join(this.snapshotsDir, fileName);
+      const fileStream = createWriteStream(filePath);
+      
+      snapshotStream.pipe(fileStream);
+
+      snapshotStream.on('end', () => {
+        resolve(fileName);
+      });
+
+      snapshotStream.on('error', (error) => {
+        reject(error);
+      });
     });
-  });
+  }
 
-  fastify.get('/heap-snapshot/list', async (request, reply) => {
+  async listSnapshots(): Promise<string[]> {
+    return await readdir(this.snapshotsDir);
+  }
+
+  async getSnapshotStream(fileName: string) {
+    const filePath = path.join(this.snapshotsDir, fileName);
+    await stat(filePath); // Check if file exists
+    return createReadStream(filePath);
+  }
+
+  async cleanupOldSnapshots(days: number): Promise<CleanupResponse> {
+    const cutoffDate = calculateCutoffDate(days);
+    const files = await readdir(this.snapshotsDir);
+    const heapSnapshotFiles = files.filter(file => file.endsWith('.heapsnapshot'));
+    
+    let deletedCount = 0;
+    const deletedFiles: string[] = [];
+    const errors: string[] = [];
+
+    for (const file of heapSnapshotFiles) {
+      try {
+        const filePath = path.join(this.snapshotsDir, file);
+        const stats = await stat(filePath);
+        
+        if (stats.mtime < cutoffDate) {
+          await unlink(filePath);
+          deletedFiles.push(file);
+          deletedCount++;
+        }
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        errors.push(`Failed to delete ${file}: ${errorMessage}`);
+      }
+    }
+
+    return {
+      message: `Cleanup completed. Deleted ${deletedCount} heap snapshot(s) older than ${days} days.`,
+      deletedFiles,
+      deletedCount,
+      errors: errors.length > 0 ? errors : undefined
+    };
+  }
+}
+
+// ===== ROUTE HANDLERS =====
+const createSnapshotHandler = (snapshotService: SnapshotService) => {
+  return async (request: any, reply: any) => {
     try {
-      const files = await readdir(snapshotsDir);
+      const fileName = await snapshotService.createSnapshot();
+      reply.send({ message: `Heap snapshot written to ${fileName}` });
+    } catch (error) {
+      request.log.error(error, 'Failed to create heap snapshot');
+      reply.status(500).send({ error: 'Failed to create heap snapshot' });
+    }
+  };
+};
+
+const listSnapshotsHandler = (snapshotService: SnapshotService) => {
+  return async (request: any, reply: any) => {
+    try {
+      const files = await snapshotService.listSnapshots();
       reply.send(files);
     } catch (error) {
-      fastify.log.error(error, 'Failed to read snapshots directory');
-      reply.status(500).send({
-        error: 'Failed to read snapshots directory',
-      });
+      request.log.error(error, 'Failed to read snapshots directory');
+      reply.status(500).send({ error: 'Failed to read snapshots directory' });
     }
-  });
+  };
+};
 
-  fastify.get('/heap-snapshot/download/:fileName', async (request, reply) => {
-    const { fileName } = request.params as { fileName: string };
-    const filePath = path.join(snapshotsDir, fileName);
+const downloadSnapshotHandler = (snapshotService: SnapshotService) => {
+  return async (request: any, reply: any) => {
+    const { fileName } = request.params as RouteParams;
     
     try {
-      // Check if file exists before attempting to stream it
-      await stat(filePath);
-      const stream = createReadStream(filePath);
+      const stream = await snapshotService.getSnapshotStream(fileName);
       reply.send(stream);
     } catch (error) {
-      fastify.log.error(error, `Failed to access file: ${fileName}`);
-      reply.status(404).send({
-        error: `File not found: ${fileName}`,
-      });
+      request.log.error(error, `Failed to access file: ${fileName}`);
+      reply.status(404).send({ error: `File not found: ${fileName}` });
     }
-  });
+  };
+};
 
-  fastify.delete('/heap-snapshot/cleanup', async (request, reply) => {
-    const { days } = request.query as { days?: string };
+const cleanupSnapshotsHandler = (snapshotService: SnapshotService) => {
+  return async (request: any, reply: any) => {
+    const { days } = request.query as CleanupQuery;
+    const validDays = validateDaysParameter(days);
     
-    if (!days || isNaN(Number(days))) {
+    if (validDays === null) {
       return reply.status(400).send({ 
         error: 'Please provide a valid number of days as a query parameter (e.g., ?days=7)' 
       });
     }
 
-    const daysThreshold = Number(days);
-    const cutoffDate = new Date(Date.now() - (daysThreshold * 24 * 60 * 60 * 1000));
-    
     try {
-      const files = await readdir(snapshotsDir);
-      const heapSnapshotFiles = files.filter(file => file.endsWith('.heapsnapshot'));
-      
-      let deletedCount = 0;
-      const deletedFiles: string[] = [];
-      const errors: string[] = [];
-
-      for (const file of heapSnapshotFiles) {
-        try {
-          const filePath = path.join(snapshotsDir, file);
-          const stats = await stat(filePath);
-          
-          if (stats.mtime < cutoffDate) {
-            await unlink(filePath);
-            deletedFiles.push(file);
-            deletedCount++;
-          }
-        } catch (error) {
-          if (error instanceof Error) {
-            errors.push(`Failed to delete ${file}: ${error.message}`);
-          } else {
-            errors.push(`Failed to delete ${file}: Unknown error`);
-          }
-        }
-      }
-
-      reply.send({
-        message: `Cleanup completed. Deleted ${deletedCount} heap snapshot(s) older than ${daysThreshold} days.`,
-        deletedFiles,
-        deletedCount,
-        errors: errors.length > 0 ? errors : undefined
-      });
-
+      const result = await snapshotService.cleanupOldSnapshots(validDays);
+      reply.send(result);
     } catch (error) {
-      fastify.log.error(error, 'Failed to read snapshots directory');
-
-      reply.status(500).send({
-        error: 'Failed to read snapshots directory',
-      });
+      request.log.error(error, 'Failed to cleanup snapshots');
+      reply.status(500).send({ error: 'Failed to read snapshots directory' });
     }
-  });
+  };
+};
+
+// ===== MAIN PLUGIN =====
+const heapSnapshot: FastifyPluginAsync = async (fastify, opts): Promise<void> => {
+  const snapshotService = new SnapshotService();
+
+  // Register routes
+  fastify.get('/heap-snapshot', createSnapshotHandler(snapshotService));
+  fastify.get('/heap-snapshot/list', listSnapshotsHandler(snapshotService));
+  fastify.get('/heap-snapshot/download/:fileName', downloadSnapshotHandler(snapshotService));
+  fastify.delete('/heap-snapshot/cleanup', cleanupSnapshotsHandler(snapshotService));
 };
 
 export default fastifyPlugin(heapSnapshot);
